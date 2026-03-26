@@ -116,23 +116,27 @@
         let workerReady = false;
         let worker = null;
 
-        // 1. 引導偵測
+        // 1. 環境偵測
         if (/Line|FBAN|FBAV|Instagram/i.test(navigator.userAgent)) {
             document.getElementById('guide').style.display = 'flex';
         }
 
-        // 2. 初始化 OCR
+        // 2. 初始化 OCR (預熱)
         (async () => {
-            worker = await Tesseract.createWorker('eng');
-            await worker.setParameters({
-                tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
-                tessedit_pageseg_mode: '7'
-            });
-            workerReady = true;
-            statusDiv.textContent = "✅ 系統就緒";
+            try {
+                worker = await Tesseract.createWorker('eng');
+                await worker.setParameters({
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+                    tessedit_pageseg_mode: '7' // 單行模式提升車牌辨識
+                });
+                workerReady = true;
+                statusDiv.textContent = "✅ 系統就緒";
+            } catch (e) {
+                statusDiv.textContent = "❌ OCR 引擎載入失敗";
+            }
         })();
 
-        // 3. GPS 定位
+        // 3. GPS 定位與 OpenStreetMap 逆向編碼
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(async pos => {
                 const { latitude: lat, longitude: lon } = pos.coords;
@@ -140,18 +144,25 @@
                 try {
                     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=zh-TW`);
                     const data = await res.json();
-                    gpsAddr = data.display_name.split(',').slice(0, 3).reverse().join(' ');
+                    // 格式化地址
+                    gpsAddr = data.display_name.split(',').slice(0, 4).reverse().join(' ').trim();
                     statusDiv.textContent = `📍 ${gpsAddr}`;
-                } catch(e) { gpsAddr = latLon; }
-            }, null, { enableHighAccuracy: true });
+                } catch(e) { gpsAddr = latLon; statusDiv.textContent = "📍 " + latLon; }
+            }, () => {
+                statusDiv.textContent = "❌ 請允許 GPS 定位權限";
+            }, { enableHighAccuracy: true });
         }
 
-        // 4. 啟動相機
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', focusMode: 'continuous' } })
-            .then(stream => { video.srcObject = stream; })
-            .catch(() => { statusDiv.textContent = "❌ 無法開啟相機"; });
+        // 4. 啟動鏡頭 (後置鏡頭、對焦最佳化)
+        navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' } 
+        }).then(stream => { 
+            video.srcObject = stream; 
+        }).catch(() => { 
+            statusDiv.textContent = "❌ 無法開啟相機，請確認 HTTPS 與權限"; 
+        });
 
-        // 5. 辨識與拍照邏輯
+        // 5. 拍照、辨識、浮水印、壓縮
         snapBtn.addEventListener('click', async () => {
             if (!workerReady) return alert("辨識引擎準備中...");
             
@@ -166,38 +177,41 @@
             mainCanvas.height = vh;
             ctx.drawImage(video, 0, 0, vw, vh);
 
-            // --- 裁切紅框區域進行辨識 ---
+            // --- 裁切紅框區域進行 OCR ---
             const cropCanvas = document.createElement('canvas');
             const cropCtx = cropCanvas.getContext('2d');
+            // 計算紅框在畫布中的比例
             const rw = vw * 0.75, rh = rw / 3;
             const rx = (vw - rw) / 2, ry = (vh - rh) / 2;
             cropCanvas.width = rw; cropCanvas.height = rh;
             cropCtx.drawImage(mainCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
 
-            // OCR 辨識
-            const { data: { text } } = await worker.recognize(cropCanvas);
-            const plate = text.replace(/[^A-Z0-9-]/g, '').trim();
-            plateDisplay.textContent = plate || "未偵測";
-            plateDisplay.classList.toggle('ok', !!plate);
+            let plate = "";
+            try {
+                const { data: { text } } = await worker.recognize(cropCanvas);
+                plate = text.replace(/[^A-Z0-9-]/g, '').trim();
+                plateDisplay.textContent = plate || "未偵測";
+                plateDisplay.classList.toggle('ok', !!plate);
+            } catch(e) { console.error(e); }
 
-            // --- 浮水印與壓縮 ---
+            // --- 繪製浮水印 (整合車牌置上加大邏輯) ---
             addWatermark(mainCanvas, plate);
             
-            // 強力壓縮：Resize to 1280px & Quality 0.6
+            // --- 強力壓縮：Resize + Quality 0.6 ---
             const outCanvas = document.createElement('canvas');
             const outCtx = outCanvas.getContext('2d');
-            const MAX_W = 1280;
-            const scale = MAX_W / vw;
-            outCanvas.width = MAX_W;
+            const TARGET_W = 1280; // 限制寬度
+            const scale = TARGET_W / vw;
+            outCanvas.width = TARGET_W;
             outCanvas.height = vh * scale;
             outCtx.drawImage(mainCanvas, 0, 0, outCanvas.width, outCanvas.height);
 
-            const finalImg = outCanvas.toDataURL('image/jpeg', 0.6);
+            const finalImg = outCanvas.toDataURL('image/jpeg', 0.6); // 60% 品質
             document.getElementById('photo').src = finalImg;
             downloadBtn.href = finalImg;
             downloadBtn.download = `XinJiang_${plate || 'Photo'}.jpg`;
             
-            document.getElementById('fileSizeInfo').textContent = `[ 圖片已最佳化：${outCanvas.width}px | 預估大小: ${Math.round(finalImg.length/1300)} KB ]`;
+            document.getElementById('fileSizeInfo').textContent = `[ 圖片已最佳化：${outCanvas.width}px | 預估大小: ${Math.round(finalImg.length/1350)} KB ]`;
             document.getElementById('previewSection').style.display = 'block';
             
             snapBtn.disabled = false;
@@ -206,35 +220,50 @@
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
         });
 
+        // 浮水印繪製函式
         function addWatermark(can, plate) {
             const ctx = can.getContext('2d');
             const W = can.width, H = can.height;
             const now = new Date();
-            const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${now.toTimeString().split(' ')[0]}`;
+            const p = x => String(x).padStart(2, '0');
+            const timeStr = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
             
             const base = W * 0.035;
-            // 底部黑遮罩
-            const grad = ctx.createLinearGradient(0, H - base*8, 0, H);
-            grad.addColorStop(0, 'transparent'); grad.addColorStop(1, 'rgba(0,0,0,0.8)');
+            const gradH = base * 11;
+            const gy = H - gradH;
+
+            // 底部深色漸層
+            const grad = ctx.createLinearGradient(0, gy, 0, H);
+            grad.addColorStop(0, 'transparent');
+            grad.addColorStop(1, 'rgba(0,0,0,0.85)');
             ctx.fillStyle = grad;
-            ctx.fillRect(0, H - base*8, W, base*8);
+            ctx.fillRect(0, gy, W, gradH);
 
-            ctx.fillStyle = "white";
-            ctx.font = `bold ${base*2.5}px sans-serif`; // 時間放大大大
-            ctx.fillText(timeStr, 20, H - base*3.5);
-            
-            ctx.font = `${base*1.2}px sans-serif`;
-            ctx.fillText(`📍 ${gpsAddr}`, 22, H - base*2);
-            ctx.fillStyle = "rgba(255,255,255,0.6)";
-            ctx.font = `${base*0.9}px monospace`;
-            ctx.fillText(latLon, 22, H - base*0.8);
+            ctx.textBaseline = 'alphabetic';
+            ctx.textAlign = "left";
 
-            if(plate) {
-                ctx.fillStyle = "#ff3322";
-                ctx.font = `bold ${base*2.5}px monospace`;
-                ctx.textAlign = "right";
-                ctx.fillText(plate, W - 20, H - base*3.5);
+            // 1. 車牌置上 (加大 1/3，鑫將紅)
+            if (plate) {
+                const plateSize = base * 3.4;
+                ctx.fillStyle = "#ff3322"; 
+                ctx.font = `bold ${plateSize}px monospace`;
+                ctx.fillText(plate, 20, H - base * 6.2);
             }
+
+            // 2. 日期時間 (車牌下方)
+            ctx.fillStyle = "white";
+            ctx.font = `bold ${base * 2.2}px sans-serif`;
+            ctx.fillText(timeStr, 22, H - base * 3.9);
+            
+            // 3. 地址
+            ctx.font = `${base * 1.1}px sans-serif`;
+            const shortAddr = gpsAddr.length > 42 ? gpsAddr.substring(0, 42) + "..." : gpsAddr;
+            ctx.fillText(`📍 ${shortAddr}`, 24, H - base * 2.3);
+            
+            // 4. 精確座標 (最底部)
+            ctx.fillStyle = "rgba(255,255,255,0.65)";
+            ctx.font = `${base * 0.9}px monospace`;
+            ctx.fillText(latLon, 24, H - base * 0.9);
         }
     </script>
 </body>
