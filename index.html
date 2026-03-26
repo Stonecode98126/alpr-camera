@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>鑫將數位行銷 — 專業辨識相機</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background: #0a0a0a; color: #e5e2e1;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; padding-bottom: 40px;
+        }
+
+        /* ── HEADER ── */
+        .header { width: 100%; max-width: 500px; display: flex; align-items: center; justify-content: space-between; padding: 16px 14px 8px; }
+        .header .brand { font-size: 17px; font-weight: 700; letter-spacing: .06em; color: #ff3322; }
+        .header .sub { font-size: 10px; letter-spacing: .14em; color: #555; margin-top: 1px; }
+        .status-bar { width: 100%; max-width: 500px; padding: 6px 14px 10px; font-size: 12px; color: #888; line-height: 1.5; min-height: 38px; }
+
+        /* ── 相機預覽與紅框 ── */
+        .cam-wrapper { width: 100%; max-width: 500px; padding: 0 10px; position: relative; }
+        #video { width: 100%; border-radius: 10px; display: block; background: #111; aspect-ratio: 4/3; object-fit: cover; }
+        .reticle-overlay { position: absolute; inset: 0 10px; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+        .reticle { width: 75%; aspect-ratio: 3/1; position: relative; border: 1.5px solid rgba(255,51,34,.4); border-radius: 5px; }
+        .reticle::before, .reticle::after, .reticle .c1, .reticle .c2 { content: ''; position: absolute; width: 15px; height: 15px; border-color: #ff3322; border-style: solid; }
+        .reticle::before { top:-2px; left:-2px; border-width:3px 0 0 3px; }
+        .reticle::after { top:-2px; right:-2px; border-width:3px 3px 0 0; }
+        .reticle .c1 { bottom:-2px; left:-2px; border-width:0 0 3px 3px; }
+        .reticle .c2 { bottom:-2px; right:-2px; border-width:0 3px 3px 0; }
+        
+        /* 掃描線動畫 */
+        .scan-line { position: absolute; left: 0; right: 0; height: 2px; background: #ff3322; top: 0; opacity: 0; }
+        .scan-line.on { animation: scan 1.5s linear infinite; opacity: 1; }
+        @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
+
+        /* ── 辨識結果 ── */
+        .plate-box { width: 100%; max-width: 500px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; }
+        .plate-result { background: #111; border: 1px solid rgba(255,51,34,.3); border-radius: 6px; padding: 8px 15px; font-family: monospace; font-size: 24px; font-weight: 700; color: #ff3322; min-width: 160px; text-align: center; }
+        .plate-result.ok { color: #4ade80; border-color: #4ade80; }
+
+        /* ── 控制按鈕 ── */
+        .controls { width: 100%; max-width: 500px; padding: 10px; }
+        button { width: 100%; padding: 18px; margin: 8px 0; border: none; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.1s; }
+        button:active { transform: scale(0.98); opacity: 0.8; }
+        .btn-snap { background: #ff3322; color: white; box-shadow: 0 4px 15px rgba(255,51,34,0.4); }
+        .btn-save { background: #ff9500; color: white; text-decoration: none; display: block; text-align: center; }
+
+        /* ── 預覽區 ── */
+        #previewSection { display: none; width: 100%; max-width: 500px; padding: 15px 10px; }
+        #photo { width: 100%; border-radius: 10px; border: 1px solid #333; }
+        .file-info { font-size: 11px; color: #666; text-align: center; margin-top: 5px; }
+
+        /* ── 瀏覽器引導 ── */
+        #guide { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); color: white; z-index: 999; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 30px; }
+        #guide .arrow { position: absolute; top: 10px; right: 20px; font-size: 40px; }
+    </style>
+</head>
+<body>
+
+    <div id="guide">
+        <div class="arrow">↗️</div>
+        <h2>請使用 Chrome 開啟</h2>
+        <p style="margin: 20px 0; color: #bbb;">偵測到 LINE/FB 內建瀏覽器<br>請點擊右上角「...」並選擇「在瀏覽器中開啟」</p>
+    </div>
+
+    <div class="header">
+        <div>
+            <div class="brand">鑫將數位行銷</div>
+            <div class="sub">STONECODE · AI VISION</div>
+        </div>
+        <div style="font-size:11px; color:#444;">V4.0 LITE</div>
+    </div>
+
+    <div id="statusDiv" class="status-bar">正在讀取 GPS 與相機...</div>
+
+    <div class="cam-wrapper">
+        <video id="video" autoplay playsinline></video>
+        <div class="reticle-overlay">
+            <div class="reticle" id="reticle">
+                <div class="c1"></div><div class="c2"></div>
+                <div class="scan-line" id="scanLine"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="plate-box">
+        <div class="plate-result" id="plateDisplay">等待掃描</div>
+        <div style="font-size: 10px; color: #444; text-align: right;">AI 車牌辨識<br>自動校正開啟</div>
+    </div>
+
+    <div class="controls">
+        <button id="snapBtn" class="btn-snap">📸 拍照並辨識車牌</button>
+        <div id="previewSection">
+            <img id="photo">
+            <div class="file-info" id="fileSizeInfo"></div>
+            <a id="downloadBtn" class="btn-save">💾 儲存輕量化照片</a>
+        </div>
+    </div>
+
+    <canvas id="mainCanvas" style="display:none;"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const mainCanvas = document.getElementById('mainCanvas');
+        const plateDisplay = document.getElementById('plateDisplay');
+        const snapBtn = document.getElementById('snapBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const statusDiv = document.getElementById('statusDiv');
+        const scanLine = document.getElementById('scanLine');
+
+        let gpsAddr = "定位搜尋中...";
+        let latLon = "";
+        let workerReady = false;
+        let worker = null;
+
+        // 1. 引導偵測
+        if (/Line|FBAN|FBAV|Instagram/i.test(navigator.userAgent)) {
+            document.getElementById('guide').style.display = 'flex';
+        }
+
+        // 2. 初始化 OCR
+        (async () => {
+            worker = await Tesseract.createWorker('eng');
+            await worker.setParameters({
+                tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+                tessedit_pageseg_mode: '7'
+            });
+            workerReady = true;
+            statusDiv.textContent = "✅ 系統就緒";
+        })();
+
+        // 3. GPS 定位
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(async pos => {
+                const { latitude: lat, longitude: lon } = pos.coords;
+                latLon = `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=zh-TW`);
+                    const data = await res.json();
+                    gpsAddr = data.display_name.split(',').slice(0, 3).reverse().join(' ');
+                    statusDiv.textContent = `📍 ${gpsAddr}`;
+                } catch(e) { gpsAddr = latLon; }
+            }, null, { enableHighAccuracy: true });
+        }
+
+        // 4. 啟動相機
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', focusMode: 'continuous' } })
+            .then(stream => { video.srcObject = stream; })
+            .catch(() => { statusDiv.textContent = "❌ 無法開啟相機"; });
+
+        // 5. 辨識與拍照邏輯
+        snapBtn.addEventListener('click', async () => {
+            if (!workerReady) return alert("辨識引擎準備中...");
+            
+            snapBtn.disabled = true;
+            snapBtn.textContent = "⌛ 處理中...";
+            scanLine.classList.add('on');
+
+            const ctx = mainCanvas.getContext('2d');
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            mainCanvas.width = vw;
+            mainCanvas.height = vh;
+            ctx.drawImage(video, 0, 0, vw, vh);
+
+            // --- 裁切紅框區域進行辨識 ---
+            const cropCanvas = document.createElement('canvas');
+            const cropCtx = cropCanvas.getContext('2d');
+            const rw = vw * 0.75, rh = rw / 3;
+            const rx = (vw - rw) / 2, ry = (vh - rh) / 2;
+            cropCanvas.width = rw; cropCanvas.height = rh;
+            cropCtx.drawImage(mainCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
+
+            // OCR 辨識
+            const { data: { text } } = await worker.recognize(cropCanvas);
+            const plate = text.replace(/[^A-Z0-9-]/g, '').trim();
+            plateDisplay.textContent = plate || "未偵測";
+            plateDisplay.classList.toggle('ok', !!plate);
+
+            // --- 浮水印與壓縮 ---
+            addWatermark(mainCanvas, plate);
+            
+            // 強力壓縮：Resize to 1280px & Quality 0.6
+            const outCanvas = document.createElement('canvas');
+            const outCtx = outCanvas.getContext('2d');
+            const MAX_W = 1280;
+            const scale = MAX_W / vw;
+            outCanvas.width = MAX_W;
+            outCanvas.height = vh * scale;
+            outCtx.drawImage(mainCanvas, 0, 0, outCanvas.width, outCanvas.height);
+
+            const finalImg = outCanvas.toDataURL('image/jpeg', 0.6);
+            document.getElementById('photo').src = finalImg;
+            downloadBtn.href = finalImg;
+            downloadBtn.download = `XinJiang_${plate || 'Photo'}.jpg`;
+            
+            document.getElementById('fileSizeInfo').textContent = `[ 圖片已最佳化：${outCanvas.width}px | 預估大小: ${Math.round(finalImg.length/1300)} KB ]`;
+            document.getElementById('previewSection').style.display = 'block';
+            
+            snapBtn.disabled = false;
+            snapBtn.textContent = "📸 拍照並辨識車牌";
+            scanLine.classList.remove('on');
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        });
+
+        function addWatermark(can, plate) {
+            const ctx = can.getContext('2d');
+            const W = can.width, H = can.height;
+            const now = new Date();
+            const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${now.toTimeString().split(' ')[0]}`;
+            
+            const base = W * 0.035;
+            // 底部黑遮罩
+            const grad = ctx.createLinearGradient(0, H - base*8, 0, H);
+            grad.addColorStop(0, 'transparent'); grad.addColorStop(1, 'rgba(0,0,0,0.8)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, H - base*8, W, base*8);
+
+            ctx.fillStyle = "white";
+            ctx.font = `bold ${base*2.5}px sans-serif`; // 時間放大大大
+            ctx.fillText(timeStr, 20, H - base*3.5);
+            
+            ctx.font = `${base*1.2}px sans-serif`;
+            ctx.fillText(`📍 ${gpsAddr}`, 22, H - base*2);
+            ctx.fillStyle = "rgba(255,255,255,0.6)";
+            ctx.font = `${base*0.9}px monospace`;
+            ctx.fillText(latLon, 22, H - base*0.8);
+
+            if(plate) {
+                ctx.fillStyle = "#ff3322";
+                ctx.font = `bold ${base*2.5}px monospace`;
+                ctx.textAlign = "right";
+                ctx.fillText(plate, W - 20, H - base*3.5);
+            }
+        }
+    </script>
+</body>
+</html>
