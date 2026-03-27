@@ -126,8 +126,9 @@
         // Gemini API 呼叫函式
         //
         async function recognizePlateGemini(base64Image) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
-    
+       //const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+      // 更高配額的備選
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`;   
         const payload = {
         contents: [{
             parts: [
