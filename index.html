@@ -91,7 +91,7 @@
 
     <script>
         // 配置你的 Gemini API KEY
-        const API_KEY = "YOUR_GEMINI_API_KEY"; 
+        const API_KEY = "AIzaSyAm-PT6QXulVhd-Z5T_ouHTbXuKAqqRz9Y"; // ← 填在這裡
         
         const video = document.getElementById('video');
         const mainCanvas = document.getElementById('mainCanvas');
@@ -156,8 +156,7 @@
         }
 
         snapBtn.addEventListener('click', async () => {
-            if (API_KEY === "YOUR_GEMINI_API_KEY") return alert("AIzaSyAm-PT6QXulVhd-Z5T_ouHTbXuKAqqRz9Y");
-            
+            if (API_KEY === "YOUR_GEMINI_API_KEY") return alert("請先在程式碼中填入你的 Gemini API Key！");
             snapBtn.disabled = true;
             snapBtn.textContent = "⌛ Gemini 辨識中...";
             scanLine.classList.add('on');
