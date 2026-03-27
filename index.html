@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>鑫將數位行銷 — 專業辨識相機</title>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <title>鑫將數位行銷 — Gemini 視覺相機</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         body {
@@ -20,7 +19,7 @@
         .header .sub { font-size: 10px; letter-spacing: .14em; color: #555; margin-top: 1px; }
         .status-bar { width: 100%; max-width: 500px; padding: 6px 14px 10px; font-size: 12px; color: #888; line-height: 1.5; min-height: 38px; }
 
-        /* ── 相機預覽與紅框 ── */
+        /* ── 相機預覽 ── */
         .cam-wrapper { width: 100%; max-width: 500px; padding: 0 10px; position: relative; }
         #video { width: 100%; border-radius: 10px; display: block; background: #111; aspect-ratio: 4/3; object-fit: cover; }
         .reticle-overlay { position: absolute; inset: 0 10px; pointer-events: none; display: flex; align-items: center; justify-content: center; }
@@ -31,7 +30,6 @@
         .reticle .c1 { bottom:-2px; left:-2px; border-width:0 0 3px 3px; }
         .reticle .c2 { bottom:-2px; right:-2px; border-width:0 3px 3px 0; }
         
-        /* 掃描線動畫 */
         .scan-line { position: absolute; left: 0; right: 0; height: 2px; background: #ff3322; top: 0; opacity: 0; }
         .scan-line.on { animation: scan 1.5s linear infinite; opacity: 1; }
         @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
@@ -46,35 +44,24 @@
         button { width: 100%; padding: 18px; margin: 8px 0; border: none; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.1s; }
         button:active { transform: scale(0.98); opacity: 0.8; }
         .btn-snap { background: #ff3322; color: white; box-shadow: 0 4px 15px rgba(255,51,34,0.4); }
-        .btn-save { background: #ff9500; color: white; text-decoration: none; display: block; text-align: center; }
+        .btn-save { background: #ff9500; color: white; text-decoration: none; display: block; text-align: center; margin-top: 10px; }
 
-        /* ── 預覽區 ── */
         #previewSection { display: none; width: 100%; max-width: 500px; padding: 15px 10px; }
         #photo { width: 100%; border-radius: 10px; border: 1px solid #333; }
         .file-info { font-size: 11px; color: #666; text-align: center; margin-top: 5px; }
-
-        /* ── 瀏覽器引導 ── */
-        #guide { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); color: white; z-index: 999; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 30px; }
-        #guide .arrow { position: absolute; top: 10px; right: 20px; font-size: 40px; }
     </style>
 </head>
 <body>
 
-    <div id="guide">
-        <div class="arrow">↗️</div>
-        <h2>請使用 Chrome 開啟</h2>
-        <p style="margin: 20px 0; color: #bbb;">偵測到 LINE/FB 內建瀏覽器<br>請點擊右上角「...」並選擇「在瀏覽器中開啟」</p>
-    </div>
-
     <div class="header">
         <div>
             <div class="brand">鑫將數位行銷</div>
-            <div class="sub">STONECODE · AI VISION</div>
+            <div class="sub">AI MULTIMODAL · GEMINI 1.5</div>
         </div>
-        <div style="font-size:11px; color:#444;">V4.0 LITE</div>
+        <div style="font-size:11px; color:#444;">V5.0 API</div>
     </div>
 
-    <div id="statusDiv" class="status-bar">正在讀取 GPS 與相機...</div>
+    <div id="statusDiv" class="status-bar">正在載入系統...</div>
 
     <div class="cam-wrapper">
         <video id="video" autoplay playsinline></video>
@@ -88,11 +75,11 @@
 
     <div class="plate-box">
         <div class="plate-result" id="plateDisplay">等待掃描</div>
-        <div style="font-size: 10px; color: #444; text-align: right;">AI 車牌辨識<br>自動校正開啟</div>
+        <div style="font-size: 10px; color: #444; text-align: right;">Gemini 視覺模型<br>高精度 OCR 開啟</div>
     </div>
 
     <div class="controls">
-        <button id="snapBtn" class="btn-snap">📸 拍照並辨識車牌</button>
+        <button id="snapBtn" class="btn-snap">📸 拍照並啟動 AI 辨識</button>
         <div id="previewSection">
             <img id="photo">
             <div class="file-info" id="fileSizeInfo"></div>
@@ -103,6 +90,9 @@
     <canvas id="mainCanvas" style="display:none;"></canvas>
 
     <script>
+        // 配置你的 Gemini API KEY
+        const API_KEY = "YOUR_GEMINI_API_KEY"; 
+        
         const video = document.getElementById('video');
         const mainCanvas = document.getElementById('mainCanvas');
         const plateDisplay = document.getElementById('plateDisplay');
@@ -113,26 +103,8 @@
 
         let gpsAddr = "定位搜尋中...";
         let latLon = "";
-        let workerReady = false;
-        let worker = null;
 
-        // 1. 引導偵測
-        if (/Line|FBAN|FBAV|Instagram/i.test(navigator.userAgent)) {
-            document.getElementById('guide').style.display = 'flex';
-        }
-
-        // 2. 初始化 OCR
-        (async () => {
-            worker = await Tesseract.createWorker('eng');
-            await worker.setParameters({
-                tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
-                tessedit_pageseg_mode: '7'
-            });
-            workerReady = true;
-            statusDiv.textContent = "✅ 系統就緒";
-        })();
-
-        // 3. GPS 定位
+        // GPS 定位
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(async pos => {
                 const { latitude: lat, longitude: lon } = pos.coords;
@@ -140,23 +112,54 @@
                 try {
                     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=zh-TW`);
                     const data = await res.json();
-                    gpsAddr = data.display_name.split(',').slice(0, 3).reverse().join(' ');
+                    gpsAddr = data.display_name.split(',').slice(0, 4).reverse().join(' ').trim();
                     statusDiv.textContent = `📍 ${gpsAddr}`;
-                } catch(e) { gpsAddr = latLon; }
+                } catch(e) { gpsAddr = latLon; statusDiv.textContent = "📍 " + latLon; }
             }, null, { enableHighAccuracy: true });
         }
 
-        // 4. 啟動相機
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', focusMode: 'continuous' } })
-            .then(stream => { video.srcObject = stream; })
+        // 啟動相機
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(stream => { video.srcObject = stream; statusDiv.textContent = "✅ 設備就緒"; })
             .catch(() => { statusDiv.textContent = "❌ 無法開啟相機"; });
 
-        // 5. 辨識與拍照邏輯
+        // Gemini API 呼叫函式
+        async function recognizePlateGemini(base64Image) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+            
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: "這是一張台灣車牌的照片，請只辨識出車牌號碼並以 'AAA-0000' 或 'AA-0000' 的格式輸出，不要回答任何額外的文字。" },
+                        {
+                            inline_data: {
+                                mime_type: "image/jpeg",
+                                data: base64Image
+                            }
+                        }
+                    ]
+                }]
+            };
+
+            const response = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            try {
+                return data.candidates[0].content.parts[0].text.trim();
+            } catch (e) {
+                return "辨識失敗";
+            }
+        }
+
         snapBtn.addEventListener('click', async () => {
-            if (!workerReady) return alert("辨識引擎準備中...");
+            if (API_KEY === "YOUR_GEMINI_API_KEY") return alert("請先填入 Gemini API Key");
             
             snapBtn.disabled = true;
-            snapBtn.textContent = "⌛ 處理中...";
+            snapBtn.textContent = "⌛ Gemini 辨識中...";
             scanLine.classList.add('on');
 
             const ctx = mainCanvas.getContext('2d');
@@ -166,7 +169,7 @@
             mainCanvas.height = vh;
             ctx.drawImage(video, 0, 0, vw, vh);
 
-            // --- 裁切紅框區域進行辨識 ---
+            // 裁切紅框進行辨識
             const cropCanvas = document.createElement('canvas');
             const cropCtx = cropCanvas.getContext('2d');
             const rw = vw * 0.75, rh = rw / 3;
@@ -174,34 +177,36 @@
             cropCanvas.width = rw; cropCanvas.height = rh;
             cropCtx.drawImage(mainCanvas, rx, ry, rw, rh, 0, 0, rw, rh);
 
-            // OCR 辨識
-            const { data: { text } } = await worker.recognize(cropCanvas);
-            const plate = text.replace(/[^A-Z0-9-]/g, '').trim();
-            plateDisplay.textContent = plate || "未偵測";
-            plateDisplay.classList.toggle('ok', !!plate);
+            // 將裁切後的圖轉成 Base64 (不包含 Data URL 前綴)
+            const base64Data = cropCanvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 
-            // --- 浮水印與壓縮 ---
+            // 呼叫 Gemini
+            const plate = await recognizePlateGemini(base64Data);
+            plateDisplay.textContent = plate;
+            plateDisplay.classList.toggle('ok', plate !== "辨識失敗");
+
+            // 繪製浮水印
             addWatermark(mainCanvas, plate);
             
-            // 強力壓縮：Resize to 1280px & Quality 0.6
+            // 強力壓縮存檔 (1280px / 0.6 品質)
             const outCanvas = document.createElement('canvas');
             const outCtx = outCanvas.getContext('2d');
-            const MAX_W = 1280;
-            const scale = MAX_W / vw;
-            outCanvas.width = MAX_W;
+            const TARGET_W = 1280;
+            const scale = TARGET_W / vw;
+            outCanvas.width = TARGET_W;
             outCanvas.height = vh * scale;
             outCtx.drawImage(mainCanvas, 0, 0, outCanvas.width, outCanvas.height);
 
             const finalImg = outCanvas.toDataURL('image/jpeg', 0.6);
             document.getElementById('photo').src = finalImg;
             downloadBtn.href = finalImg;
-            downloadBtn.download = `XinJiang_${plate || 'Photo'}.jpg`;
+            downloadBtn.download = `XinJiang_${plate}.jpg`;
             
-            document.getElementById('fileSizeInfo').textContent = `[ 圖片已最佳化：${outCanvas.width}px | 預估大小: ${Math.round(finalImg.length/1300)} KB ]`;
+            document.getElementById('fileSizeInfo').textContent = `[ 壓縮後尺寸：1280px | 預估大小: ${Math.round(finalImg.length/1350)} KB ]`;
             document.getElementById('previewSection').style.display = 'block';
             
             snapBtn.disabled = false;
-            snapBtn.textContent = "📸 拍照並辨識車牌";
+            snapBtn.textContent = "📸 拍照並啟動 AI 辨識";
             scanLine.classList.remove('on');
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
         });
@@ -210,31 +215,33 @@
             const ctx = can.getContext('2d');
             const W = can.width, H = can.height;
             const now = new Date();
-            const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${now.toTimeString().split(' ')[0]}`;
-            
+            const p = x => String(x).padStart(2, '0');
+            const timeStr = `${now.getFullYear()}-${p(now.getMonth()+1)}-${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
             const base = W * 0.035;
-            // 底部黑遮罩
-            const grad = ctx.createLinearGradient(0, H - base*8, 0, H);
-            grad.addColorStop(0, 'transparent'); grad.addColorStop(1, 'rgba(0,0,0,0.8)');
+
+            // 背景漸層
+            const grad = ctx.createLinearGradient(0, H - base*11, 0, H);
+            grad.addColorStop(0, 'transparent'); grad.addColorStop(1, 'rgba(0,0,0,0.85)');
             ctx.fillStyle = grad;
-            ctx.fillRect(0, H - base*8, W, base*8);
+            ctx.fillRect(0, H - base*11, W, base*11);
 
+            // 車牌置上 (加大 1/3)
+            ctx.fillStyle = "#ff3322"; 
+            ctx.font = `bold ${base * 3.4}px monospace`;
+            ctx.textAlign = "left";
+            ctx.fillText(plate, 20, H - base * 6.2);
+
+            // 日期
             ctx.fillStyle = "white";
-            ctx.font = `bold ${base*2.5}px sans-serif`; // 時間放大大大
-            ctx.fillText(timeStr, 20, H - base*3.5);
+            ctx.font = `bold ${base * 2.2}px sans-serif`;
+            ctx.fillText(timeStr, 22, H - base * 3.9);
             
-            ctx.font = `${base*1.2}px sans-serif`;
-            ctx.fillText(`📍 ${gpsAddr}`, 22, H - base*2);
-            ctx.fillStyle = "rgba(255,255,255,0.6)";
-            ctx.font = `${base*0.9}px monospace`;
-            ctx.fillText(latLon, 22, H - base*0.8);
-
-            if(plate) {
-                ctx.fillStyle = "#ff3322";
-                ctx.font = `bold ${base*2.5}px monospace`;
-                ctx.textAlign = "right";
-                ctx.fillText(plate, W - 20, H - base*3.5);
-            }
+            // 地址與座標
+            ctx.font = `${base * 1.1}px sans-serif`;
+            ctx.fillText(`📍 ${gpsAddr}`, 24, H - base * 2.3);
+            ctx.fillStyle = "rgba(255,255,255,0.65)";
+            ctx.font = `${base * 0.9}px monospace`;
+            ctx.fillText(latLon, 24, H - base * 0.9);
         }
     </script>
 </body>
