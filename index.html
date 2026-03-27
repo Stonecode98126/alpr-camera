@@ -47,17 +47,11 @@
         #video { width: 100%; border-radius: 10px; display: block; background: #111; aspect-ratio: 4/3; object-fit: cover; }
 
         .reticle-overlay { position: absolute; inset: 0 10px; pointer-events: none; display: flex; align-items: center; justify-content: center; }
-
-        .reticle { width: 75%; aspect-ratio: 3/1; position: relative; border: 1.5px solid rgba(255,51,34,.4); border-radius: 5px; }
-
+        .reticle { width: 45%; aspect-ratio: 3/1; position: relative; border: 1.5px solid rgba(255,51,34,.4); border-radius: 5px; }
         .reticle::before, .reticle::after, .reticle .c1, .reticle .c2 { content: ''; position: absolute; width: 15px; height: 15px; border-color: #ff3322; border-style: solid; }
-
         .reticle::before { top:-2px; left:-2px; border-width:3px 0 0 3px; }
-
         .reticle::after { top:-2px; right:-2px; border-width:3px 3px 0 0; }
-
         .reticle .c1 { bottom:-2px; left:-2px; border-width:0 0 3px 3px; }
-
         .reticle .c2 { bottom:-2px; right:-2px; border-width:0 3px 3px 0; }
 
         
@@ -469,16 +463,23 @@
 
 
             // 車牌置上 (加大 1/3)
+           // ctx.fillStyle = "#ff3322"; 
+           // ctx.font = `bold ${base * 3.4}px monospace`;
+           // ctx.textAlign = "left";
+           // ctx.fillText(plate, 20, H - base * 6.2);
+// 改成 ↓（加黃色描邊效果）
+ctx.font = `bold ${base * 3.4}px monospace`;
+ctx.textAlign = "left";
 
-            ctx.fillStyle = "#ff3322"; 
+// 先畫黃色描邊（strokeText）
+ctx.strokeStyle = "#FFD700";      // 金黃色
+ctx.lineWidth = base * 0.9;       // 描邊粗細
+ctx.lineJoin = "round";           // 轉角圓滑，避免尖刺
+ctx.strokeText(plate, 20, H - base * 6.2);
 
-            ctx.font = `bold ${base * 3.4}px monospace`;
-
-            ctx.textAlign = "left";
-
-            ctx.fillText(plate, 20, H - base * 6.2);
-
-
+// 再畫紅色文字在上面
+ctx.fillStyle = "#ff3322";
+ctx.fillText(plate, 20, H - base * 6.2);
 
             // 日期
 
