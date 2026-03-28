@@ -251,36 +251,31 @@
        //const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
       // 更高配額的備選
-
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`;   
-
-        const payload = {
-
+ const url = `https://my-proxy.yourname.workers.dev`;
+    
+    const payload = {
         contents: [{
-
             parts: [
-
                 { text: "這是一張台灣車牌的照片，請只辨識出車牌號碼並以 'AAA-0000' 或 'AA-0000' 的格式輸出，不要回答任何額外的文字。" },
-
-                {
-
-                    inline_data: {
-
-                        mime_type: "image/jpeg",
-
-                        data: base64Image
-
-                    }
-
-                }
-
+                { inline_data: { mime_type: "image/jpeg", data: base64Image } }
             ]
-
         }]
-
     };
 
+    const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
 
+    const data = await response.json();
+    if (data.error) {
+        statusDiv.textContent = `❌ API錯誤: ${data.error.code} - ${data.error.message}`;
+        return "辨識失敗";
+    }
+    return data.candidates[0].content.parts[0].text.trim();
+}
+     
 
     try {
 
